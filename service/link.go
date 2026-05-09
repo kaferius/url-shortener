@@ -1,0 +1,33 @@
+package service
+
+import (
+	"context"
+	"math/rand/v2"
+	"strconv"
+	"url-shortener/repository"
+)
+
+type LinkService struct {
+	repo *repository.LinkRepository
+}
+
+func NewLinkService(r *repository.LinkRepository) *LinkService {
+	return &LinkService{repo: r}
+}
+
+func (s *LinkService) GetLink(ctx context.Context, short string) (repository.Link, error) {
+	return s.repo.Get(ctx, short)
+}
+
+func (s *LinkService) GetLinks(ctx context.Context) ([]repository.Link, error) {
+	return s.repo.GetAll()
+}
+
+func (s *LinkService) DeleteLink(ctx context.Context, short string) error {
+	return s.repo.Delete(ctx, short)
+}
+
+func (s *LinkService) CreateLink(ctx context.Context, long string) (repository.Link, error) {
+	short := strconv.Itoa(int(rand.Uint32()))
+	return s.repo.Create(ctx, repository.Link{Long: long, Short: short})
+}

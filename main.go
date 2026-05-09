@@ -19,6 +19,7 @@ func main() {
 	if err != nil {
 		log.Fatal("creating bot error")
 	}
+	urlPrefix := os.Getenv("URL_BASE")
 
 	r := gin.Default()
 	db := database.NewPostgresDB()
@@ -30,7 +31,7 @@ func main() {
 	service := service.NewLinkService(repo)
 	handler := handler.NewLinkHandler(service)
 
-	go bot.StartBot(service)
+	go bot.StartBot(service, urlPrefix)
 
 	r.GET("/links/:short", handler.GetLink)
 	r.POST("/links", handler.CreateLink)

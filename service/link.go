@@ -28,6 +28,6 @@ func (s *LinkService) DeleteLink(ctx context.Context, short string) error {
 }
 
 func (s *LinkService) CreateLink(ctx context.Context, long string) (repository.Link, error) {
-	short := strconv.Itoa(int(rand.Uint32()))
+	short := strconv.FormatInt(int64(rand.Uint32()), 16)
 	return s.repo.Create(ctx, repository.Link{Long: long, Short: short})
 }

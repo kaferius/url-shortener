@@ -3,21 +3,32 @@ package database
 import (
 	"database/sql"
 	"log"
+	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
 func NewPostgresDB() *sql.DB {
-	connStr := "host=localhost port=5432 user=postgres password=postgres dbname=mydb sslmode=disable"
+	connStr := "host=" + os.Getenv("DB_HOST") + " port=5432 user=postgres password=postgres dbname=mydb sslmode=disable"
 
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
+	var db *sql.DB
+	var err error
+	for i := 0; i < 10; i++ {
+		db, err = sql.Open("postgres", connStr)
+		if err == nil {
+			err = db.Ping()
+		}
+		if err == nil {
+			_, err = db.Exec("CREATE TABLE IF NOT EXISTS links (short TEXT PRIMARY KEY, long TEXT);")
+		}
+		if err == nil {
+			return db
+		}
+
+		time.Sleep(1 * time.Second)
 	}
 
-	if err := db.Ping(); err != nil {
-		log.Fatal(err)
-	}
-
-	return db
+	log.Fatal(err)
+	return nil
 }

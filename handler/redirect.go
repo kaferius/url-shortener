@@ -14,5 +14,6 @@ func (h *LinkHandler) Redirect(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	h.service.Increase(short)
 	c.Redirect(http.StatusMovedPermanently, link.Long)
 }

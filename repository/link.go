@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -46,7 +47,7 @@ func (r *LinkRepository) GetAll() ([]Link, error) {
 }
 
 func (r *LinkRepository) Create(ctx context.Context, link Link) (Link, error) {
-	err := r.db.QueryRowContext(ctx, "INSERT INTO links (short, long) VALUES ($1, $2) RETURNING short, long", link.Short, link.Long).Scan(&link.Short, &link.Long)
+	err := r.db.QueryRowContext(ctx, "INSERT INTO links (short, long, clicks) VALUES ($1, $2, 0) RETURNING short, long", link.Short, link.Long).Scan(&link.Short, &link.Long)
 
 	if err == nil {
 		r.rdb.Set(ctx, "short:"+link.Short, link.Long, time.Minute*30)
@@ -64,7 +65,7 @@ func (r *LinkRepository) Get(ctx context.Context, short string) (Link, error) {
 	}
 
 	if err != redis.Nil {
-		return Link{Long: "", Short: short}, err
+		log.Printf("failed to get link from redis: %v\n", err)
 	}
 
 	err = r.db.QueryRowContext(ctx, "SELECT long FROM links WHERE short = $1", short).Scan(&long)
@@ -88,4 +89,32 @@ func (r *LinkRepository) Delete(ctx context.Context, short string) error {
 	}
 
 	return nil
+}
+
+func (r *LinkRepository) Increase(ctx context.Context, short string) {
+	err := r.rdb.Incr(ctx, "clicks:"+short).Err()
+	if err != nil {
+		log.Printf("failed to increase clicks: %v\n", err)
+	}
+	err = r.rdb.SAdd(ctx, "click_keys", short).Err()
+	if err != nil {
+		log.Printf("failed to increase clicks: %v\n", err)
+	}
+}
+
+func (r *LinkRepository) GetClicks(ctx context.Context, short string) (int, error) {
+	var res int
+	err := r.db.QueryRowContext(ctx, "SELECT clicks FROM links WHERE short = $1", short).Scan(&res)
+
+	if err != nil {
+		return 0, err
+	}
+
+	delta, err := r.rdb.Get(ctx, "clicks:"+short).Int()
+	if err != nil {
+		log.Printf("failed to get clicks from redis: %v\n", err)
+		return res, nil
+	}
+
+	return res + delta, nil
 }

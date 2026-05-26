@@ -20,7 +20,7 @@ func NewPostgresDB() *sql.DB {
 			err = db.Ping()
 		}
 		if err == nil {
-			_, err = db.Exec("CREATE TABLE IF NOT EXISTS links (short TEXT PRIMARY KEY, long TEXT);")
+			_, err = db.Exec("CREATE TABLE IF NOT EXISTS links (short TEXT PRIMARY KEY, long TEXT, clicks INTEGER);")
 		}
 		if err == nil {
 			return db

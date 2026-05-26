@@ -31,3 +31,11 @@ func (s *LinkService) CreateLink(ctx context.Context, long string) (repository.L
 	short := strconv.FormatInt(int64(rand.Uint32()), 16)
 	return s.repo.Create(ctx, repository.Link{Long: long, Short: short})
 }
+
+func (s *LinkService) Increase(short string) {
+	go s.repo.Increase(context.Background(), short)
+}
+
+func (s *LinkService) GetClicks(ctx context.Context, short string) (int, error) {
+	return s.repo.GetClicks(ctx, short)
+}

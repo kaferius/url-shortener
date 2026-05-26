@@ -70,6 +70,21 @@ func (h *LinkHandler) GetLinks(c *gin.Context) {
 	links, err := h.service.GetLinks(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
 	}
 	c.JSON(http.StatusOK, links)
+}
+
+func (h *LinkHandler) GetClicks(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	short := c.Param("short")
+
+	clicks, err := h.service.GetClicks(ctx, short)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"clicks": clicks})
 }

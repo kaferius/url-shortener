@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"url-shortener/database"
@@ -28,16 +29,19 @@ func main() {
 	defer rdb.Close()
 
 	repo := repository.NewLinkRepository(db, rdb)
-	service := service.NewLinkService(repo)
-	handler := handler.NewLinkHandler(service)
+	linkService := service.NewLinkService(repo)
+	linkHandler := handler.NewLinkHandler(linkService)
 
-	go bot.StartBot(service, urlPrefix)
+	go service.StartFlusher(context.Background(), rdb, db)
 
-	r.GET("/links/:short", handler.GetLink)
-	r.POST("/links", handler.CreateLink)
-	r.GET("/links", handler.GetLinks)
-	r.DELETE("/links/:short", handler.DeleteLink)
-	r.GET("/:short", handler.Redirect)
+	go bot.StartBot(linkService, urlPrefix)
+
+	r.GET("/links/:short", linkHandler.GetLink)
+	r.POST("/links", linkHandler.CreateLink)
+	r.GET("/links", linkHandler.GetLinks)
+	r.DELETE("/links/:short", linkHandler.DeleteLink)
+	r.GET("/:short", linkHandler.Redirect)
+	r.GET("/clicks/:short", linkHandler.GetClicks)
 
 	r.Run(":8080")
 }

@@ -38,12 +38,15 @@ func (r *LinkRepository) GetAll() ([]Link, error) {
 		}
 		links = append(links, link)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return links, nil
 }
 
 func (r *LinkRepository) Create(ctx context.Context, link Link) (Link, error) {
-	err := r.db.QueryRow("INSERT INTO links (short, long) VALUES ($1, $2) RETURNING short, long", link.Short, link.Long).Scan(&link.Short, &link.Long)
+	err := r.db.QueryRowContext(ctx, "INSERT INTO links (short, long) VALUES ($1, $2) RETURNING short, long", link.Short, link.Long).Scan(&link.Short, &link.Long)
 
 	if err == nil {
 		r.rdb.Set(ctx, "short:"+link.Short, link.Long, time.Minute*30)
@@ -60,7 +63,11 @@ func (r *LinkRepository) Get(ctx context.Context, short string) (Link, error) {
 		return Link{Long: long, Short: short}, nil
 	}
 
-	err = r.db.QueryRow("SELECT long FROM links WHERE short = $1", short).Scan(&long)
+	if err != redis.Nil {
+		return Link{Long: "", Short: short}, err
+	}
+
+	err = r.db.QueryRowContext(ctx, "SELECT long FROM links WHERE short = $1", short).Scan(&long)
 	if err != nil {
 		return Link{Long: "", Short: short}, err
 	}
@@ -75,12 +82,7 @@ func (r *LinkRepository) Delete(ctx context.Context, short string) error {
 
 	r.rdb.Del(ctx, key)
 
-	var long string
-	err := r.db.QueryRow("SELECT long FROM links WHERE short = $1", short).Scan(&long)
-	if err != nil {
-		return err
-	}
-	_, err = r.db.Exec("DELETE FROM links WHERE short = $1", short)
+	_, err := r.db.ExecContext(ctx, "DELETE FROM links WHERE short = $1", short)
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,7 @@ func main() {
 	godotenv.Load()
 	bot, err := telegram.NewBotHandler(os.Getenv("BOT_TOKEN"))
 	if err != nil {
-		log.Fatal("creating bot error")
+		log.Fatalf("creating bot error, %v", err)
 	}
 	urlPrefix := os.Getenv("URL_BASE")
 
@@ -33,6 +33,7 @@ func main() {
 	linkHandler := handler.NewLinkHandler(linkService)
 
 	go service.StartFlusher(context.Background(), rdb, db)
+	linkService.StartCleanupWorker(context.Background())
 
 	go bot.StartBot(linkService, urlPrefix)
 

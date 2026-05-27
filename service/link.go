@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"log"
 	"math/rand/v2"
 	"strconv"
+	"time"
 	"url-shortener/repository"
 )
 
@@ -28,8 +30,9 @@ func (s *LinkService) DeleteLink(ctx context.Context, short string) error {
 }
 
 func (s *LinkService) CreateLink(ctx context.Context, long string) (repository.Link, error) {
-	short := strconv.FormatInt(int64(rand.Uint32()), 16)
-	return s.repo.Create(ctx, repository.Link{Long: long, Short: short})
+	short := strconv.FormatInt(int64(rand.Uint32()), 36)
+	expiresAt := time.Now().Add(time.Hour * 24)
+	return s.repo.Create(ctx, repository.Link{Long: long, Short: short, ExpiresAt: &expiresAt})
 }
 
 func (s *LinkService) Increase(short string) {
@@ -38,4 +41,24 @@ func (s *LinkService) Increase(short string) {
 
 func (s *LinkService) GetClicks(ctx context.Context, short string) (int, error) {
 	return s.repo.GetClicks(ctx, short)
+}
+
+func (s *LinkService) StartCleanupWorker(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+
+	go func() {
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				err := s.repo.DeleteExpired(ctx)
+				if err != nil {
+					log.Printf("cleanup failed: %v\n", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }

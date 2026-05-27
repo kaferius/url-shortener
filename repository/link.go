@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"time"
 
@@ -10,8 +11,11 @@ import (
 )
 
 type Link struct {
-	Long  string `json:"long"`
-	Short string `json:"short"`
+	Long      string     `json:"long"`
+	Short     string     `json:"short"`
+	Clicks    int        `json:"clicks"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	CreatedAt *time.Time `json:"created_at"`
 }
 
 type LinkRepository struct {
@@ -24,7 +28,7 @@ func NewLinkRepository(db *sql.DB, rdb *redis.Client) *LinkRepository {
 }
 
 func (r *LinkRepository) GetAll() ([]Link, error) {
-	rows, err := r.db.Query("SELECT short, long FROM links")
+	rows, err := r.db.Query("SELECT * FROM links WHERE expires_at > NOW()")
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +38,7 @@ func (r *LinkRepository) GetAll() ([]Link, error) {
 
 	for rows.Next() {
 		var link Link
-		if err := rows.Scan(&link.Short, &link.Long); err != nil {
+		if err := rows.Scan(&link.Short, &link.Long, &link.Clicks, &link.ExpiresAt, &link.CreatedAt); err != nil {
 			return nil, err
 		}
 		links = append(links, link)
@@ -47,10 +51,30 @@ func (r *LinkRepository) GetAll() ([]Link, error) {
 }
 
 func (r *LinkRepository) Create(ctx context.Context, link Link) (Link, error) {
-	err := r.db.QueryRowContext(ctx, "INSERT INTO links (short, long, clicks) VALUES ($1, $2, 0) RETURNING short, long", link.Short, link.Long).Scan(&link.Short, &link.Long)
+	err := r.db.QueryRowContext(
+		ctx,
+		"INSERT INTO links (short, long, clicks, expires_at) VALUES ($1, $2, 0, $3) RETURNING *",
+		link.Short,
+		link.Long,
+		link.ExpiresAt,
+	).Scan(
+		&link.Short,
+		&link.Long,
+		&link.Clicks,
+		&link.ExpiresAt,
+		&link.CreatedAt,
+	)
 
 	if err == nil {
-		r.rdb.Set(ctx, "short:"+link.Short, link.Long, time.Minute*30)
+		var ttl time.Duration
+
+		if link.ExpiresAt == nil || time.Until(*link.ExpiresAt) <= 0 {
+			return Link{}, errors.New("invalid expiration time")
+		}
+
+		ttl = time.Until(*link.ExpiresAt)
+
+		r.rdb.Set(ctx, "short:"+link.Short, link.Long, min(time.Minute*30, ttl))
 	}
 
 	return link, err
@@ -61,19 +85,25 @@ func (r *LinkRepository) Get(ctx context.Context, short string) (Link, error) {
 
 	long, err := r.rdb.Get(ctx, key).Result()
 	if err == nil {
-		return Link{Long: long, Short: short}, nil
+		ttl, err := r.rdb.TTL(ctx, key).Result()
+		if err != nil {
+			return Link{Long: long, Short: short}, nil
+		}
+		expiresAt := time.Now().Add(ttl)
+		return Link{Long: long, Short: short, ExpiresAt: &expiresAt}, nil
 	}
 
 	if err != redis.Nil {
 		log.Printf("failed to get link from redis: %v\n", err)
 	}
 
-	err = r.db.QueryRowContext(ctx, "SELECT long FROM links WHERE short = $1", short).Scan(&long)
+	var expiresAt time.Time
+	err = r.db.QueryRowContext(ctx, "SELECT long, expires_at FROM links WHERE short = $1 AND expires_at > NOW()", short).Scan(&long, &expiresAt)
 	if err != nil {
-		return Link{Long: "", Short: short}, err
+		return Link{Long: "", Short: short, ExpiresAt: &expiresAt}, err
 	}
 
-	r.rdb.Set(ctx, key, long, time.Minute*30)
+	r.rdb.Set(ctx, key, long, min(time.Minute*30, time.Until(expiresAt)))
 
 	return Link{Long: long, Short: short}, nil
 }
@@ -117,4 +147,10 @@ func (r *LinkRepository) GetClicks(ctx context.Context, short string) (int, erro
 	}
 
 	return res + delta, nil
+}
+
+func (r *LinkRepository) DeleteExpired(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM links WHERE expires_at <= NOW()")
+
+	return err
 }
